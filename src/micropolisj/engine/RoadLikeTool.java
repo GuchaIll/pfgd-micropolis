@@ -350,7 +350,7 @@ class RoadLikeTool extends ToolStroke
 	private boolean layWire(ToolEffectIfc eff)
 	{
 		final int WIRE_COST = 5;
-		final int UNDERWATER_WIRE_COST = 5;
+		final int UNDERWATER_WIRE_COST = 25;
 
 		int cost = WIRE_COST;
 
