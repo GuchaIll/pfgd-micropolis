@@ -1763,7 +1763,7 @@ public class Micropolis
 	{
 		int revenue = budget.taxFund / TAXFREQ;
 		int expenses = -(budget.roadFundEscrow + budget.fireFundEscrow + budget.policeFundEscrow) / TAXFREQ;
-
+        
 		FinancialHistory hist = new FinancialHistory();
 		hist.cityTime = cityTime;
 		hist.taxIncome = revenue;
@@ -1787,16 +1787,102 @@ public class Micropolis
 	/** Annual maintenance cost of each fire station. */
 	static final int FIRE_STATION_MAINTENANCE = 100;
 
+	/*calculate average household spending amount for calculating consumption
+	 * Average Household Spending=Essential Expenses+Discretionary Spending
+	 * Essential Spending=Housing+Utilities+Food+Transport+Healthcare+Taxes
+	 * Discretionary Spending=Entertainment+Savings+Luxury Goods
+	 * Average Household spending = (essential spending + discretionary spending) / number of households
+	 */
+	public int calculateAverageHouseHoldSpending()
+	{
+		int essentialSpending = 0;
+		int discretionarySpending = 0;
+		
+		int housingCost = calculateEstimatedHousingPrice();
+		int miscCost = 100;
+		int foodCost = totalPop * 2 / indPop;
+		int transportCost = trafficAverage * 5 / roadTotal;
+		int taxCost = (int)(cityTax * 0.01 * totalPop * 100);
+
+		essentialSpending = housingCost + miscCost + foodCost + transportCost + taxCost;
+
+		//TODO: calculate discretionary spending such as entertainment, savings, luxury goods
+		return (essentialSpending + discretionarySpending) / (int)(totalPop / 4);
+	}
+
+	public int getEstimatedNumHouseHolds()
+	{
+		return (int)(totalPop / 4);
+	}
+
+	public int calculateEstimatedHousingPrice()
+	{
+		int housingCost = totalPop / resZoneCount;
+		return housingCost;
+	}
+	//Calcualte GDP GDP=C+I+G+(X−M)
+		/*
+		 * 
+		 * C: Consumption – Spending by households on goods and services.
+		 * 		Dependent on population 
+			I: Investment – Business investments in capital, residential construction, and inventories.
+			G: Government Spending – Government expenditures on goods and services (excluding transfer payments like pensions).
+			(X - M): Net Exports – Exports (X) minus Imports (M)
+		 */
+	public int calculateGDP()
+	{
+		int GDP = 0;
+		
+		//consumption: spending by households on goods and services
+		int estimatedNumHouseHolds = getEstimatedNumHouseHolds();
+		int averageHouseHoldSpending = calculateAverageHouseHoldSpending();
+		int consumption = estimatedNumHouseHolds * averageHouseHoldSpending;
+
+		//invenstment: business investment in capital
+		//dependent on residential constructions, industrial population and zones
+		int industrialZoneScaleFactorB = 100;
+		int industrialPopScaleFactorB = 100;
+		int residentialZoneScaleFactorB = 100;
+		
+		int investment = indPop * industrialPopScaleFactorB + indZoneCount * industrialZoneScaleFactorB + resZoneCount * residentialZoneScaleFactorB;
+		
+		//government spending - governemnt expense on goods and services
+		//dependent on government spending on road, fire and police, and on other building types
+		int governmentSpending = budget.roadFundEscrow + budget.fireFundEscrow + budget.policeFundEscrow;
+	
+		//Net Exports - Imports
+		//Exports is influenced by  industrial zones, sea ports and airports
+		//Import is estimated based on the total population's consumption and number of indstrial zones
+		int commercialZoneScaleFactorXM = 100;
+		int industrialZoneScaleFactorXM = 200;
+		int seaportScaleFactorXM = 400;
+		int airportScaleFactorXM = 400;
+		int exports = comZoneCount * commercialZoneScaleFactorXM + indZoneCount * industrialZoneScaleFactorXM + seaportCount * seaportScaleFactorXM + airportCount * airportScaleFactorXM;
+		
+		double importScaleFactorXM = 0.5;
+		int commericialZoneScaleFactorXM = 100;
+		int imports = (int)(totalPop * averageHouseHoldSpending * importScaleFactorXM + comZoneCount * commericialZoneScaleFactorXM);
+		int netExports = exports - imports;
+		
+		GDP = consumption + investment + governmentSpending + netExports;
+		return GDP;
+	}
+
+
+
 	/**
 	 * Calculate the current budget numbers.
 	 */
 	public BudgetNumbers generateBudget()
 	{
 		BudgetNumbers b = new BudgetNumbers();
+
+
 		b.taxRate = Math.max(0, cityTax);
 		b.roadPercent = Math.max(0.0, roadPercent);
 		b.firePercent = Math.max(0.0, firePercent);
 		b.policePercent = Math.max(0.0, policePercent);
+
 
 		b.previousBalance = budget.totalFunds;
 		b.taxIncome = (int)Math.round(lastTotalPop * landValueAverage / 120 * b.taxRate * FLevels[gameLevel]);
