@@ -169,9 +169,20 @@ public class Micropolis
 	// budget stuff
 	//
 	public int cityTax = 7;
+	public int salesTax = 5;
+	public int industryTax = 6;
+	public int housingTax = 7;
+	public int incomeTax = 7;
+	public int exportImportTax = 4;
+
 	public double roadPercent = 1.0;
 	public double policePercent = 1.0;
 	public double firePercent = 1.0;
+
+	public int loanAmount = 0; // Total loan amount borrowed
+    public int loanRepaymentPerYear = 0; // Annual repayment amount
+    public double loanInterestRate = 0.05; // 5% annual interest rate
+    public boolean hasLoan = false; // Whether the player currently has a loan
 
 	int taxEffect = 7;
 	int roadEffect = 32;
@@ -190,6 +201,10 @@ public class Micropolis
 	int scycle; //same as cityTime, except mod 1024
 	int fcycle; //counts simulation steps (mod 1024)
 	int acycle; //animation cycle (mod 960)
+
+	public EconomicCycle currentCycle = EconomicCycle.NORMAL;
+    private int cycleCounter = 0; // Tracks time for switching cycles
+    private static final int CYCLE_DURATION = 240; // Duration of each cycle in game weeks
 
 	public CityEval evaluation;
 
@@ -342,6 +357,7 @@ public class Micropolis
 	ArrayList<Listener> listeners = new ArrayList<Listener>();
 	ArrayList<MapListener> mapListeners = new ArrayList<MapListener>();
 	ArrayList<EarthquakeListener> earthquakeListeners = new ArrayList<EarthquakeListener>();
+	ArrayList<EconomicCycleListener> economicCycleListeners = new ArrayList<EconomicCycleListener>();
 
 	public void addListener(Listener l)
 	{
@@ -361,6 +377,15 @@ public class Micropolis
 	public void removeEarthquakeListener(EarthquakeListener l)
 	{
 		this.earthquakeListeners.remove(l);
+	}
+
+	public void addEconomicCycleListener(EconomicCycleListener l)
+	{
+		this.economicCycleListeners.add(l);
+	}
+	public void removeEconomicCycleListener(EconomicCycleListener l)
+	{
+		this.economicCycleListeners.remove(l);
 	}
 
 	public void addMapListener(MapListener l)
@@ -561,6 +586,7 @@ public class Micropolis
 				setValves();
 			}
 			clearCensus();
+			updateEconomicCycle();
 			break;
 
 		case 1:
@@ -1288,10 +1314,24 @@ public class Micropolis
 			employment = 1;
 		}
 
-		double migration = normResPop * (employment - 1);
+		
 		final double BIRTH_RATE = 0.02;
-		double births = (double)normResPop * BIRTH_RATE;
-		double projectedResPop = normResPop + migration + births;
+		
+		//double projectedResPop = normResPop + migration + births;
+		
+		//GDP directly affecs the city's population
+		//GDP growth factor affects the population birth rate
+		int gdp = calculateGDP();
+		double gdpGrowthFactor = gdp / 1000.0;
+
+		// Cap migration to ±10% of normResPop
+		employment = (employment + 1.0)/2.0;
+		double migration = Math.max(-normResPop * 0.05, Math.min(normResPop * 0.05, normResPop * (employment - 1)));
+		// Cap births to 5% of normResPop
+		double births = Math.min(normResPop * 0.2, normResPop * BIRTH_RATE * gdpGrowthFactor);
+		
+		//minimum population set to 50
+		double projectedResPop = Math.min(50, normResPop + migration + births);
 
 		double temp = (history.com[1] + history.ind[1]);
 		double laborBase;
@@ -1379,8 +1419,8 @@ public class Micropolis
 
 		if (indValve > 1500)
 			indValve = 1500;
-		else if (indValve < -1500)
-			indValve = -1500;
+		else if (indValve < -1000)
+			indValve = -1000;
 
 
 		if (resCap && resValve > 0) {
@@ -1772,6 +1812,9 @@ public class Micropolis
 		cashFlow = revenue - expenses;
 		spend(-cashFlow);
 
+		 // Repay loan
+		 repayLoan();
+
 		hist.totalFunds = budget.totalFunds;
 		financialHistory.add(0,hist);
 
@@ -1787,6 +1830,82 @@ public class Micropolis
 	/** Annual maintenance cost of each fire station. */
 	static final int FIRE_STATION_MAINTENANCE = 100;
 
+	public enum EconomicCycle {
+		BOOM, NORMAL, RECESSION
+	}
+
+	private void updateEconomicCycle() {
+		cycleCounter++;
+		if (cycleCounter >= CYCLE_DURATION) {
+			cycleCounter = 0;
+	
+			// Randomly switch to a new cycle
+			int random = PRNG.nextInt(100);
+			if (random < 30) {
+				currentCycle = EconomicCycle.RECESSION; // 30% chance of recession
+			} else if (random < 70) {
+				currentCycle = EconomicCycle.NORMAL; // 40% chance of normal
+			} else {
+				currentCycle = EconomicCycle.BOOM; // 30% chance of boom
+			}
+	
+			// Notify listeners about the cycle change
+			fireEconomicCycleChanged();
+		}
+	}
+
+	private void fireEconomicCycleChanged() {
+		for (Listener l : listeners) {
+			if (l instanceof EconomicCycleListener) {
+				((EconomicCycleListener) l).economicCycleChanged(currentCycle);
+			}
+		}
+	}
+
+	public interface EconomicCycleListener extends Listener {
+		void economicCycleChanged(EconomicCycle newCycle);
+	}
+
+	public void takeLoan(int amount) {
+		if (hasLoan) {
+			sendMessage(MicropolisMessage.LOAN_ALREADY_TAKEN);
+			return;
+		}
+	
+		loanAmount = amount;
+		loanRepaymentPerYear = (int) Math.ceil((loanAmount * (1 + loanInterestRate)) / 10); // Repay over 10 years
+		budget.totalFunds += loanAmount;
+		hasLoan = true;
+	
+		sendMessage(MicropolisMessage.LOAN_TAKEN);
+		fireFundsChanged();
+	}
+
+	private void repayLoan() {
+		if (!hasLoan) {
+			return;
+		}
+	
+		if (loanAmount <= 0) {
+			hasLoan = false;
+			loanAmount = 0;
+			loanRepaymentPerYear = 0;
+			sendMessage(MicropolisMessage.LOAN_REPAID);
+			return;
+		}
+	
+		if (budget.totalFunds >= loanRepaymentPerYear) {
+			budget.totalFunds -= loanRepaymentPerYear;
+			loanAmount -= loanRepaymentPerYear;
+		} else {
+			// If funds are insufficient, deduct what is available
+			loanAmount -= budget.totalFunds;
+			budget.totalFunds = 0;
+		}
+	
+		fireFundsChanged();
+	}
+
 	/*calculate average household spending amount for calculating consumption
 	 * Average Household Spending=Essential Expenses+Discretionary Spending
 	 * Essential Spending=Housing+Utilities+Food+Transport+Healthcare+Taxes
@@ -1800,14 +1919,20 @@ public class Micropolis
 		
 		int housingCost = calculateEstimatedHousingPrice();
 		int miscCost = 100;
-		int foodCost = totalPop * 2 / indPop;
-		int transportCost = trafficAverage * 5 / roadTotal;
+		int foodCost = (indPop != 0) ? totalPop * 2 / indPop : 0; // Avoid division by zero
+    int transportCost = (roadTotal != 0) ? trafficAverage * 5 / roadTotal : 0; // Avoid division by zero
 		int taxCost = (int)(cityTax * 0.01 * totalPop * 100);
 
 		essentialSpending = housingCost + miscCost + foodCost + transportCost + taxCost;
 
 		//TODO: calculate discretionary spending such as entertainment, savings, luxury goods
-		return (essentialSpending + discretionarySpending) / (int)(totalPop / 4);
+		int totalHouseholds = getEstimatedNumHouseHolds();
+		if (totalHouseholds == 0) {
+			return 0; // Avoid division by zero if there are no households
+		}
+	
+		return (essentialSpending + discretionarySpending) / totalHouseholds;
+	
 	}
 
 	public int getEstimatedNumHouseHolds()
@@ -1817,6 +1942,10 @@ public class Micropolis
 
 	public int calculateEstimatedHousingPrice()
 	{
+		if(resZoneCount == 0)
+		{
+			return 0;
+		}
 		int housingCost = totalPop / resZoneCount;
 		return housingCost;
 	}
@@ -1833,38 +1962,59 @@ public class Micropolis
 	{
 		int GDP = 0;
 		
-		//consumption: spending by households on goods and services
-		int estimatedNumHouseHolds = getEstimatedNumHouseHolds();
-		int averageHouseHoldSpending = calculateAverageHouseHoldSpending();
-		int consumption = estimatedNumHouseHolds * averageHouseHoldSpending;
+		int baselineConsumption = 500; // Baseline value for starting cities
+    	int estimatedNumHouseHolds = getEstimatedNumHouseHolds();
+    	int averageHouseHoldSpending = calculateAverageHouseHoldSpending();
+    	int consumption = estimatedNumHouseHolds * averageHouseHoldSpending + baselineConsumption;
 
-		//invenstment: business investment in capital
-		//dependent on residential constructions, industrial population and zones
-		int industrialZoneScaleFactorB = 100;
-		int industrialPopScaleFactorB = 100;
-		int residentialZoneScaleFactorB = 100;
-		
-		int investment = indPop * industrialPopScaleFactorB + indZoneCount * industrialZoneScaleFactorB + resZoneCount * residentialZoneScaleFactorB;
-		
-		//government spending - governemnt expense on goods and services
-		//dependent on government spending on road, fire and police, and on other building types
-		int governmentSpending = budget.roadFundEscrow + budget.fireFundEscrow + budget.policeFundEscrow;
-	
-		//Net Exports - Imports
-		//Exports is influenced by  industrial zones, sea ports and airports
-		//Import is estimated based on the total population's consumption and number of indstrial zones
-		int commercialZoneScaleFactorXM = 100;
-		int industrialZoneScaleFactorXM = 200;
-		int seaportScaleFactorXM = 400;
-		int airportScaleFactorXM = 400;
-		int exports = comZoneCount * commercialZoneScaleFactorXM + indZoneCount * industrialZoneScaleFactorXM + seaportCount * seaportScaleFactorXM + airportCount * airportScaleFactorXM;
-		
-		double importScaleFactorXM = 0.5;
-		int commericialZoneScaleFactorXM = 100;
-		int imports = (int)(totalPop * averageHouseHoldSpending * importScaleFactorXM + comZoneCount * commericialZoneScaleFactorXM);
-		int netExports = exports - imports;
+    	// Investment
+    	int baselineInvestment = 300; // Baseline value for starting cities
+    	int industrialZoneScaleFactorB = 100;
+    	int industrialPopScaleFactorB = 100;
+    	int residentialZoneScaleFactorB = 100;
+    	int investment = indPop * industrialPopScaleFactorB + indZoneCount * industrialZoneScaleFactorB + resZoneCount * residentialZoneScaleFactorB + baselineInvestment;
+
+    	// Government Spending
+    	int governmentSpending = budget.roadFundEscrow + budget.fireFundEscrow + budget.policeFundEscrow;
+
+    	// Net Exports
+    	int baselineExports = 200; // Baseline value for starting cities
+    	int commercialZoneScaleFactorXM = 100;
+    	int industrialZoneScaleFactorXM = 200;
+    	int seaportScaleFactorXM = 400;
+    	int airportScaleFactorXM = 400;
+    	int exports = comZoneCount * commercialZoneScaleFactorXM + indZoneCount * industrialZoneScaleFactorXM + seaportCount * seaportScaleFactorXM + airportCount * airportScaleFactorXM + baselineExports;
+
+    	double importScaleFactorXM = 0.5;
+   		int commericialZoneScaleFactorXM = 100;
+    	int imports = (int) (totalPop * averageHouseHoldSpending * importScaleFactorXM + comZoneCount * commericialZoneScaleFactorXM);
+    	int netExports = exports - imports;
+
+    	// Cap negative net exports
+    	if (netExports < -500) {
+        	netExports = -500;
+    	}
 		
 		GDP = consumption + investment + governmentSpending + netExports;
+		
+		switch (currentCycle) {
+			case BOOM:
+				GDP *= 1.2; // 20% increase during a boom
+				break;
+			case RECESSION:
+				GDP *= 0.8; // 20% decrease during a recession
+				break;
+			case NORMAL:
+			default:
+				// No change during normal periods
+				break;
+		}
+
+		// Apply a minimum GDP floor
+		int minimumGDP = 1000; 
+    	if (GDP < minimumGDP) {
+        	GDP = minimumGDP;
+   		 }
 		return GDP;
 	}
 
@@ -1883,9 +2033,17 @@ public class Micropolis
 		b.firePercent = Math.max(0.0, firePercent);
 		b.policePercent = Math.max(0.0, policePercent);
 
+		int gdp = calculateGDP();
 
 		b.previousBalance = budget.totalFunds;
-		b.taxIncome = (int)Math.round(lastTotalPop * landValueAverage / 120 * b.taxRate * FLevels[gameLevel]);
+		//b.taxIncome = (int)Math.round(lastTotalPop * landValueAverage / 120 * b.taxRate * FLevels[gameLevel]);
+		b.taxIncome = (int)Math.round(gdp * b.taxRate / 120.0 * FLevels[gameLevel]);
+		
+		int residentialTaxIncome = (int) Math.round(resPop * housingTax / 100.0 * FLevels[gameLevel]);
+    	int commercialTaxIncome = (int) Math.round(comPop * salesTax / 100.0 * FLevels[gameLevel]);
+    	int industrialTaxIncome = (int) Math.round(indPop * industryTax / 100.0 * FLevels[gameLevel]);
+    	int exportImportTaxIncome = (int) Math.round((gdp / 10) * exportImportTax / 100.0);
+		b.taxIncome += residentialTaxIncome + commercialTaxIncome + industrialTaxIncome + exportImportTaxIncome;
 		assert b.taxIncome >= 0;
 
 		b.roadRequest = (int)Math.round((lastRoadTotal + lastRailTotal * 2) * RLevels[gameLevel]);

@@ -58,6 +58,10 @@ public enum MicropolisMessage
 	FLOOD_REPORT,
 	MELTDOWN_REPORT,        // 43            doMeltdown
 	RIOTING_REPORT,
+	LOAN_ALREADY_TAKEN,
+	LOAN_TAKEN,
+	LOAN_REPAID,
+	LOAN_LIMIT,
 
 	// added by Jason
 	NO_NUCLEAR_PLANTS;

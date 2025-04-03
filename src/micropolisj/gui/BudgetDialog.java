@@ -23,14 +23,29 @@ public class BudgetDialog extends JDialog
 	Micropolis engine;
 
 	JSpinner taxRateEntry;
+	JSpinner salesTaxRateEntry;
+	JSpinner taxIncomeRateEntry;
+	JSpinner industryTaxRateEntry;
+	JSpinner housingTaxRateEntry;
+	JSpinner exportTaxRateEntry;
+
 	int origTaxRate;
 	double origRoadPct;
 	double origFirePct;
 	double origPolicePct;
 
+	JLabel gdpValueLabel = new JLabel();
+	JLabel economicCycleLabel = new JLabel("Economic Cycle: NORMAL");
+	JLabel loanAmountLabel = new JLabel("Total Loan: $0");
+	JTextField loanAmountField = new JTextField("0", 10);
+	JLabel loanRepaymentLabel = new JLabel("Annual Repayment: $0");
+	JButton takeLoanButton = new JButton("Take Loan");
+
+
 	JLabel roadFundRequest = new JLabel();
 	JLabel roadFundAlloc = new JLabel();
 	JSlider roadFundEntry;
+
 
 	JLabel policeFundRequest = new JLabel();
 	JLabel policeFundAlloc = new JLabel();
@@ -50,11 +65,23 @@ public class BudgetDialog extends JDialog
 	private void applyChange()
 	{
 		int newTaxRate = ((Number) taxRateEntry.getValue()).intValue();
+		int newSalesTaxRate = ((Number) salesTaxRateEntry.getValue()).intValue();
+		int newTaxIncomeRate = ((Number) taxIncomeRateEntry.getValue()).intValue();
+		int newIndustryTaxRate = ((Number) industryTaxRateEntry.getValue()).intValue();
+		int newHousingTaxRate = ((Number) housingTaxRateEntry.getValue()).intValue();
+		int newExportTaxRate = ((Number) exportTaxRateEntry.getValue()).intValue();
+
 		int newRoadPct = ((Number) roadFundEntry.getValue()).intValue();
 		int newPolicePct = ((Number) policeFundEntry.getValue()).intValue();
 		int newFirePct = ((Number) fireFundEntry.getValue()).intValue();
 
 		engine.cityTax = newTaxRate;
+		engine.salesTax = newSalesTaxRate;
+		engine.incomeTax = newTaxIncomeRate;
+		engine.industryTax = newIndustryTaxRate;
+		engine.housingTax = newHousingTaxRate;
+		engine.exportImportTax = newExportTaxRate;
+
 		engine.roadPercent = (double)newRoadPct / 100.0;
 		engine.policePercent = (double)newPolicePct / 100.0;
 		engine.firePercent = (double)newFirePct / 100.0;
@@ -62,12 +89,23 @@ public class BudgetDialog extends JDialog
 		loadBudgetNumbers(false);
 	}
 
+
 	private void loadBudgetNumbers(boolean updateEntries)
 	{
 		BudgetNumbers b = engine.generateBudget();
 		if (updateEntries)
 		{
 		taxRateEntry.setValue(b.taxRate);
+		salesTaxRateEntry.setValue(b.salesTaxRate);
+		taxIncomeRateEntry.setValue(b.taxIncomeRate);
+		industryTaxRateEntry.setValue(b.IndustryTaxRate);
+		housingTaxRateEntry.setValue(b.housingTaxRate);
+		exportTaxRateEntry.setValue(b.exportTaxRate);
+
+		loanAmountLabel.setText("Total Loan: " + formatFunds(engine.loanAmount));
+		loanRepaymentLabel.setText("Annual Repayment: " + formatFunds(engine.loanRepaymentPerYear));
+
+
 		roadFundEntry.setValue((int)Math.round(b.roadPercent*100.0));
 		policeFundEntry.setValue((int)Math.round(b.policePercent*100.0));
 		fireFundEntry.setValue((int)Math.round(b.firePercent*100.0));
@@ -83,6 +121,10 @@ public class BudgetDialog extends JDialog
 
 		fireFundRequest.setText(formatFunds(b.fireRequest));
 		fireFundAlloc.setText(formatFunds(b.fireFunded));
+
+		int gdp = engine.calculateGDP();
+		gdpValueLabel.setText(formatFunds(gdp));
+		economicCycleLabel.setText("Economic Cycle: " + engine.currentCycle.name());
 	}
 
 	static void adjustSliderSize(JSlider slider)
@@ -91,6 +133,25 @@ public class BudgetDialog extends JDialog
 		slider.setPreferredSize(
 			new Dimension(80, sz.height)
 			);
+	}
+
+	private void onTakeLoanClicked() {
+		String input = JOptionPane.showInputDialog(this, "Enter loan amount:", "Take Loan", JOptionPane.PLAIN_MESSAGE);
+		if (input != null) {
+			try {
+				int amount = Integer.parseInt(input);
+				if (amount > 0) {
+					engine.takeLoan(amount);
+					loadBudgetNumbers(true);
+					loanAmountLabel.setText("Total Loan: " + formatFunds(engine.loanAmount));
+					loanRepaymentLabel.setText("Annual Repayment: " + formatFunds(engine.loanRepaymentPerYear));
+				} else {
+					JOptionPane.showMessageDialog(this, "Loan amount must be positive.", "Error", JOptionPane.ERROR_MESSAGE);
+				}
+			} catch (NumberFormatException e) {
+				JOptionPane.showMessageDialog(this, "Invalid loan amount.", "Error", JOptionPane.ERROR_MESSAGE);
+			}
+		}
 	}
 
 	public BudgetDialog(Window owner, Micropolis engine)
@@ -104,8 +165,18 @@ public class BudgetDialog extends JDialog
 		this.origFirePct = engine.firePercent;
 		this.origPolicePct = engine.policePercent;
 
+		int gdp = engine.calculateGDP();
+		gdpValueLabel.setText(formatFunds(gdp));
+
+		economicCycleLabel.setText("Economic Cycle: " + engine.currentCycle.name());
+    	
 		// give text fields of the fund-level spinners a minimum size
 		taxRateEntry = new JSpinner(new SpinnerNumberModel(7,0,20,1));
+		salesTaxRateEntry = new JSpinner(new SpinnerNumberModel(0,0,20,1));
+		taxIncomeRateEntry = new JSpinner(new SpinnerNumberModel(0,0,20,1));
+		industryTaxRateEntry = new JSpinner(new SpinnerNumberModel(0,0,20,1));
+		housingTaxRateEntry = new JSpinner(new SpinnerNumberModel(0,0,20,1));
+		exportTaxRateEntry = new JSpinner(new SpinnerNumberModel(0,0,20,1));
 
 		// widgets to set funding levels
 		roadFundEntry = new JSlider(JSlider.HORIZONTAL, 0, 100, 100);
@@ -121,6 +192,12 @@ public class BudgetDialog extends JDialog
 		}
 		};
 		taxRateEntry.addChangeListener(change);
+		salesTaxRateEntry.addChangeListener(change);
+		taxIncomeRateEntry.addChangeListener(change);
+		industryTaxRateEntry.addChangeListener(change);
+		housingTaxRateEntry.addChangeListener(change);
+		exportTaxRateEntry.addChangeListener(change);
+
 		roadFundEntry.addChangeListener(change);
 		fireFundEntry.addChangeListener(change);
 		policeFundEntry.addChangeListener(change);
@@ -130,6 +207,32 @@ public class BudgetDialog extends JDialog
 		add(mainBox, BorderLayout.CENTER);
 
 		mainBox.add(makeTaxPane());
+
+		JPanel loanPane = new JPanel(new GridBagLayout());
+        loanPane.setBorder(BorderFactory.createTitledBorder("Government Loan"));
+		
+		GridBagConstraints c = new GridBagConstraints();
+		c.insets = new Insets(5, 5, 5, 5); // Add padding: top, left, bottom, right
+		c.anchor = GridBagConstraints.WEST;
+
+		c.gridx = 0;
+		c.gridy = 0;
+        loanPane.add(loanAmountLabel, c);
+
+		c.gridy = 1;
+        loanPane.add(loanRepaymentLabel, c);
+
+		c.gridy = 2;
+		c.gridwidth = 2; // Span two columns
+		c.anchor = GridBagConstraints.CENTER; 
+        JButton loanButton = new JButton("Take Loan");
+        loanButton.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent ev) {
+                onTakeLoanClicked();
+            }});
+
+        loanPane.add(loanButton);
+		mainBox.add(loanPane);
 
 		JSeparator sep = new JSeparator(SwingConstants.HORIZONTAL);
 		mainBox.add(sep);
@@ -145,6 +248,8 @@ public class BudgetDialog extends JDialog
 		mainBox.add(sep2);
 
 		mainBox.add(makeOptionsPane());
+         
+		
 
 		JPanel buttonPane = new JPanel();
 		add(buttonPane, BorderLayout.SOUTH);
@@ -162,6 +267,8 @@ public class BudgetDialog extends JDialog
 				onResetClicked();
 			}});
 		buttonPane.add(resetBtn);
+
+		
 
 		loadBudgetNumbers(true);
 		setAutoRequestFocus_compat(false);
@@ -287,11 +394,36 @@ public class BudgetDialog extends JDialog
 		pane.add(taxRateEntry, c1);
 		pane.add(taxRevenueLbl, c2);
 
+		// Add Sales Tax Rate Spinner
+		//c0.gridy = 1;
+		//c1.gridy = 1;
+		//pane.add(new JLabel("Sales Tax Rate:"), c0);
+		//pane.add(salesTaxRateEntry, c1);
+	
+		// Add Housing Tax Rate Spinner
+		//c0.gridy = 2;
+		//c1.gridy = 2;
+		//pane.add(new JLabel("Housing Tax Rate:"), c0);
+		//pane.add(housingTaxRateEntry, c1);
+	
+		// Add Industry Tax Rate Spinner
+		//c0.gridy = 3;
+		//c1.gridy = 3;
+		///pane.add(new JLabel("Industry Tax Rate:"), c0);
+		//pane.add(industryTaxRateEntry, c1);
+	
+		// Add Export/Import Tax Rate Spinner
+		//c0.gridy = 4;
+		//c1.gridy = 4;
+		//pane.add(new JLabel("Export/Import Tax Rate:"), c0);
+		//pane.add(exportTaxRateEntry, c1);
+	
 		return pane;
 	}
 
 	private void onContinueClicked()
 	{
+
 		if (autoBudgetBtn.isSelected() != engine.autoBudget) {
 			engine.toggleAutoBudget();
 		}
@@ -301,7 +433,7 @@ public class BudgetDialog extends JDialog
 		else if (!pauseBtn.isSelected() && engine.simSpeed == Speed.PAUSED) {
 			engine.setSpeed(Speed.NORMAL);
 		}
-
+        
 		dispose();
 	}
 
@@ -344,6 +476,24 @@ public class BudgetDialog extends JDialog
 		balancePane.add(new JLabel(strings.getString("budgetdlg.operating_expenses")), c0);
 		c0.gridy++;
 		balancePane.add(new JLabel(strings.getString("budgetdlg.cash_end")), c0);
+
+		//Add GDP Label
+		c0.gridy++;
+		balancePane.add(new JLabel("City GDP:"), c0);
+
+		c1.anchor = GridBagConstraints.EAST;
+		c1.weightx = 0.25;
+		c1.gridx = 1;
+		c1.gridy = c0.gridy;
+		balancePane.add(gdpValueLabel, c1);
+
+		 // Add Economic Cycle Label
+		c0.gridy++;
+		 c1.weightx = 0.25;
+		 c1.gridx = 1;
+		 c1.gridy = c0.gridy;
+		balancePane.add(economicCycleLabel, c1);
+
 
 		c1.anchor = GridBagConstraints.EAST;
 		c1.weightx = 0.25;

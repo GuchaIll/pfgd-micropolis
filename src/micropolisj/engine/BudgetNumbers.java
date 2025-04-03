@@ -15,6 +15,12 @@ package micropolisj.engine;
 public class BudgetNumbers
 {
 	public int taxRate;
+	public int salesTaxRate;
+	public int taxIncomeRate;
+	public int IndustryTaxRate;
+	public int housingTaxRate;
+	public int exportTaxRate;
+
 	public int taxIncome;
 	public int operatingExpenses;
 	public int previousBalance;
